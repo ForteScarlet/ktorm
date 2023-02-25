@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2021 the original author or authors.
+ * Copyright 2018-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,9 +41,9 @@ internal fun EntityImplementation.hasColumnValue(binding: ColumnBinding): Boolea
             if (child == null) {
                 // null is also a legal column value.
                 return true
+            } else {
+                return child.implementation.hasPrimaryKeyValue(binding.referenceTable as Table<*>)
             }
-
-            return child.implementation.hasPrimaryKeyValue(binding.referenceTable as Table<*>)
         }
         is NestedBinding -> {
             var curr: EntityImplementation = this
@@ -58,9 +58,9 @@ internal fun EntityImplementation.hasColumnValue(binding: ColumnBinding): Boolea
                     if (child == null) {
                         // null is also a legal column value.
                         return true
+                    } else {
+                        curr = child.implementation
                     }
-
-                    curr = child.implementation
                 }
             }
 
@@ -154,9 +154,10 @@ internal fun EntityImplementation.setColumnValue(binding: ColumnBinding, value: 
 
 internal fun EntityImplementation.isPrimaryKey(name: String): Boolean {
     for (pk in this.fromTable?.primaryKeys.orEmpty()) {
-        when (pk.binding) {
+        val binding = pk.binding ?: continue
+        when (binding) {
             is ReferenceBinding -> {
-                if (parent == null && pk.binding.onProperty.name == name) {
+                if (parent == null && binding.onProperty.name == name) {
                     return true
                 }
             }
@@ -167,7 +168,7 @@ internal fun EntityImplementation.isPrimaryKey(name: String): Boolean {
                 var curr: EntityImplementation = this
                 while (true) {
                     val parent = curr.parent ?: break
-                    val children = parent.values.filterValues { it == curr }
+                    val children = parent.values.filterValues { it is Entity<*> && it.implementation === curr }
 
                     if (children.isEmpty()) {
                         break
@@ -177,7 +178,7 @@ internal fun EntityImplementation.isPrimaryKey(name: String): Boolean {
                     }
                 }
 
-                if (namesPath.withIndex().all { (i, names) -> pk.binding.properties[i].name in names }) {
+                if (namesPath.withIndex().all { (i, names) -> binding.properties[i].name in names }) {
                     return true
                 }
             }

@@ -2,12 +2,17 @@ package org.ktorm.global
 
 import org.junit.Test
 import org.ktorm.database.DialectFeatureNotSupportedException
+import org.ktorm.database.use
 import org.ktorm.dsl.*
 import org.ktorm.expression.ScalarExpression
+import org.ktorm.schema.TextSqlType
+import java.sql.Clob
+import kotlin.test.assertContentEquals
 
 /**
  * Created by vince at Apr 05, 2020.
  */
+@Suppress("DEPRECATION")
 class GlobalQueryTest : BaseGlobalTest() {
     companion object {
         const val TWO = 2
@@ -111,7 +116,7 @@ class GlobalQueryTest : BaseGlobalTest() {
         val salaries = t
             .select(t.departmentId, avg(t.salary))
             .groupBy(t.departmentId)
-            .having { avg(t.salary) greater 100.0 }
+            .having { avg(t.salary) gt 100.0 }
             .associate { it.getInt(1) to it.getDouble(2) }
 
         println(salaries)
@@ -127,7 +132,7 @@ class GlobalQueryTest : BaseGlobalTest() {
         val salaries = Employees
             .select(deptId, salaryAvg)
             .groupBy(deptId)
-            .having { salaryAvg greater 100.0 }
+            .having { salaryAvg gt 100.0 }
             .associate { row ->
                 row[deptId] to row[salaryAvg]
             }
@@ -144,7 +149,7 @@ class GlobalQueryTest : BaseGlobalTest() {
 
         val salaries = Employees
             .select(salary)
-            .where { salary greater 200L }
+            .where { salary gt 200L }
             .map { it.getLong(1) }
 
         println(salaries)
@@ -156,7 +161,7 @@ class GlobalQueryTest : BaseGlobalTest() {
     fun testLimit() {
         try {
             val query = Employees.select().orderBy(Employees.id.desc()).limit(0, 2)
-            assert(query.totalRecords == 4)
+            assert(query.totalRecordsInAllPages == 4)
 
             val ids = query.map { it[Employees.id] }
             assert(ids[0] == 4)
@@ -192,6 +197,21 @@ class GlobalQueryTest : BaseGlobalTest() {
 
         assert(names.size == 3)
         println(names)
+    }
+
+    @Test
+    fun testCast() {
+        val salaries = Employees
+            .select(Employees.salary.cast(TextSqlType))
+            .where { Employees.salary eq 200 }
+            .map { row ->
+                when (val value = row.getObject(1)) {
+                    is Clob -> value.characterStream.use { it.readText() }
+                    else -> value
+                }
+            }
+
+        assertContentEquals(listOf("200"), salaries)
     }
 
     @Test

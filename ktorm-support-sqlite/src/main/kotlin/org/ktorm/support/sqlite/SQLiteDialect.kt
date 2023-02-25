@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2021 the original author or authors.
+ * Copyright 2018-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,16 @@
 package org.ktorm.support.sqlite
 
 import org.ktorm.database.*
-import org.ktorm.expression.ArgumentExpression
-import org.ktorm.expression.QueryExpression
-import org.ktorm.expression.SqlFormatter
-import org.ktorm.schema.IntSqlType
+import org.ktorm.expression.*
 
 /**
  * [SqlDialect] implementation for SQLite database.
  */
 public open class SQLiteDialect : SqlDialect {
+
+    override fun createExpressionVisitor(interceptor: SqlExpressionVisitorInterceptor): SqlExpressionVisitor {
+        return SQLiteExpressionVisitor::class.newVisitorInstance(interceptor)
+    }
 
     override fun createSqlFormatter(database: Database, beautifySql: Boolean, indentSize: Int): SqlFormatter {
         return SQLiteFormatter(database, beautifySql, indentSize)
@@ -42,7 +43,7 @@ public open class SQLiteDialect : SqlDialect {
                 statement.executeUpdate()
             }
 
-            val retrieveKeySql = "select last_insert_rowid()"
+            val retrieveKeySql = "SELECT LAST_INSERT_ROWID()"
             if (database.logger.isDebugEnabled()) {
                 database.logger.debug("Retrieving generated keys by SQL: $retrieveKeySql")
             }
@@ -53,20 +54,5 @@ public open class SQLiteDialect : SqlDialect {
 
             return Pair(effects, rowSet)
         }
-    }
-}
-
-/**
- * [SqlFormatter] implementation for SQLite, formatting SQL expressions as strings with their execution arguments.
- */
-public open class SQLiteFormatter(
-    database: Database, beautifySql: Boolean, indentSize: Int
-) : SqlFormatter(database, beautifySql, indentSize) {
-
-    override fun writePagination(expr: QueryExpression) {
-        newLine(Indentation.SAME)
-        writeKeyword("limit ?, ? ")
-        _parameters += ArgumentExpression(expr.offset ?: 0, IntSqlType)
-        _parameters += ArgumentExpression(expr.limit ?: Int.MAX_VALUE, IntSqlType)
     }
 }

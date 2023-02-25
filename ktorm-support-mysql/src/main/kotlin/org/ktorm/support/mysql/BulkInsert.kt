@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2021 the original author or authors.
+ * Copyright 2018-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.ktorm.support.mysql
 
 import org.ktorm.database.Database
+import org.ktorm.dsl.AliasRemover
 import org.ktorm.dsl.AssignmentsBuilder
 import org.ktorm.dsl.KtormDsl
 import org.ktorm.dsl.batchInsert
@@ -53,7 +54,7 @@ public data class BulkInsertExpression(
  * Construct a bulk insert expression in the given closure, then execute it and return the effected row count.
  *
  * The usage is almost the same as [batchInsert], but this function is implemented by generating a special SQL
- * using MySQL's bulk insert syntax, instead of based on JDBC batch operations. For this reason, its performance
+ * using MySQL bulk insert syntax, instead of based on JDBC batch operations. For this reason, its performance
  * is much better than [batchInsert].
  *
  * The generated SQL is like: `insert into table (column1, column2) values (?, ?), (?, ?), (?, ?)...`.
@@ -91,9 +92,17 @@ public fun <T : BaseTable<*>> Database.bulkInsert(
     table: T, block: BulkInsertStatementBuilder<T>.() -> Unit
 ): Int {
     val builder = BulkInsertStatementBuilder(table).apply(block)
+    if (builder.assignments.isEmpty()) {
+        throw IllegalArgumentException("There are no items in the bulk operation.")
+    }
+    for (assignments in builder.assignments) {
+        if (assignments.isEmpty()) {
+            throw IllegalArgumentException("There are no columns to insert in the statement.")
+        }
+    }
 
-    val expression = AliasRemover.visit(
-        BulkInsertExpression(table.asExpression(), builder.assignments, builder.updateAssignments)
+    val expression = dialect.createExpressionVisitor(AliasRemover).visit(
+        BulkInsertExpression(table.asExpression(), builder.assignments)
     )
 
     return executeUpdate(expression)
@@ -147,8 +156,16 @@ public fun <T : BaseTable<*>> Database.bulkInsertOrUpdate(
     table: T, block: BulkInsertOrUpdateStatementBuilder<T>.() -> Unit
 ): Int {
     val builder = BulkInsertOrUpdateStatementBuilder(table).apply(block)
+    if (builder.assignments.isEmpty()) {
+        throw IllegalArgumentException("There are no items in the bulk operation.")
+    }
+    for (assignments in builder.assignments) {
+        if (assignments.isEmpty()) {
+            throw IllegalArgumentException("There are no columns to insert in the statement.")
+        }
+    }
 
-    val expression = AliasRemover.visit(
+    val expression = dialect.createExpressionVisitor(AliasRemover).visit(
         BulkInsertExpression(table.asExpression(), builder.assignments, builder.updateAssignments)
     )
 
@@ -159,21 +176,8 @@ public fun <T : BaseTable<*>> Database.bulkInsertOrUpdate(
  * DSL builder for bulk insert statements.
  */
 @KtormDsl
-public class BulkInsertStatementBuilder<T : BaseTable<*>>(table: T) : BulkInsertOrUpdateStatementBuilder<T>(table) {
-
-    @Deprecated("This function will be removed in the future, please use bulkInsertOrUpdate instead of bulkInsert.")
-    override fun onDuplicateKey(block: BulkInsertOrUpdateOnDuplicateKeyClauseBuilder.(T) -> Unit) {
-        super.onDuplicateKey(block)
-    }
-}
-
-/**
- * DSL builder for bulk insert or update statements.
- */
-@KtormDsl
-public open class BulkInsertOrUpdateStatementBuilder<T : BaseTable<*>>(internal val table: T) {
+public open class BulkInsertStatementBuilder<T : BaseTable<*>>(internal val table: T) {
     internal val assignments = ArrayList<List<ColumnAssignmentExpression<*>>>()
-    internal val updateAssignments = ArrayList<ColumnAssignmentExpression<*>>()
 
     /**
      * Add the assignments of a new row to the bulk insert.
@@ -190,11 +194,19 @@ public open class BulkInsertOrUpdateStatementBuilder<T : BaseTable<*>>(internal 
             throw IllegalArgumentException("Every item in a batch operation must be the same.")
         }
     }
+}
+
+/**
+ * DSL builder for bulk insert or update statements.
+ */
+@KtormDsl
+public class BulkInsertOrUpdateStatementBuilder<T : BaseTable<*>>(table: T) : BulkInsertStatementBuilder<T>(table) {
+    internal val updateAssignments = ArrayList<ColumnAssignmentExpression<*>>()
 
     /**
      * Specify the update assignments while any key conflict exists.
      */
-    public open fun onDuplicateKey(block: BulkInsertOrUpdateOnDuplicateKeyClauseBuilder.(T) -> Unit) {
+    public fun onDuplicateKey(block: BulkInsertOrUpdateOnDuplicateKeyClauseBuilder.(T) -> Unit) {
         val builder = BulkInsertOrUpdateOnDuplicateKeyClauseBuilder()
         builder.block(table)
         updateAssignments += builder.assignments

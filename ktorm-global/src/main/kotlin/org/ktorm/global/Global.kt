@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2021 the original author or authors.
+ * Copyright 2018-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+@file:Suppress("DEPRECATION")
 
 package org.ktorm.global
 
@@ -48,6 +50,7 @@ internal val threadLocal: ThreadLocal<Database> = ThreadLocal()
  *
  * @see Database.invoke
  */
+@Deprecated("ktorm-global will be removed in the future, please migrate to the standard API.")
 public val Database.Companion.global: Database get() {
     val database = threadLocal.get() ?: lastConnected.get()
     return database ?: error("Not connected to any database yet, please connect to one via Database.connectGlobally")
@@ -57,13 +60,14 @@ public val Database.Companion.global: Database get() {
  * Connect to a database by a specific [connector] function and save the returned database instance
  * to [Database.Companion.global].
  *
- * @param dialect the dialect, auto detects an implementation by default using JDK [ServiceLoader] facility.
- * @param logger logger used to output logs, auto detects an implementation by default.
+ * @param dialect the dialect, auto-detects an implementation by default using JDK [ServiceLoader] facility.
+ * @param logger logger used to output logs, auto-detects an implementation by default.
  * @param alwaysQuoteIdentifiers whether we need to always quote SQL identifiers in the generated SQLs.
  * @param generateSqlInUpperCase whether we need to output the generated SQLs in upper case.
  * @param connector the connector function used to obtain SQL connections.
  * @return the new-created database object.
  */
+@Deprecated("ktorm-global will be removed in the future, please migrate to the standard API.")
 public fun Database.Companion.connectGlobally(
     dialect: SqlDialect = detectDialectImplementation(),
     logger: Logger = detectLoggerImplementation(),
@@ -87,12 +91,13 @@ public fun Database.Companion.connectGlobally(
  * Connect to a database using a [DataSource] and save the returned database instance to [Database.Companion.global].
  *
  * @param dataSource the data source used to obtain SQL connections.
- * @param dialect the dialect, auto detects an implementation by default using JDK [ServiceLoader] facility.
- * @param logger logger used to output logs, auto detects an implementation by default.
+ * @param dialect the dialect, auto-detects an implementation by default using JDK [ServiceLoader] facility.
+ * @param logger logger used to output logs, auto-detects an implementation by default.
  * @param alwaysQuoteIdentifiers whether we need to always quote SQL identifiers in the generated SQLs.
  * @param generateSqlInUpperCase whether we need to output the generated SQLs in upper case.
  * @return the new-created database object.
  */
+@Deprecated("ktorm-global will be removed in the future, please migrate to the standard API.")
 public fun Database.Companion.connectGlobally(
     dataSource: DataSource,
     dialect: SqlDialect = detectDialectImplementation(),
@@ -118,14 +123,15 @@ public fun Database.Companion.connectGlobally(
  *
  * @param url the URL of the database to be connected.
  * @param driver the full qualified name of the JDBC driver class.
- * @param user the user name of the database.
+ * @param user the username of the database.
  * @param password the password of the database.
- * @param dialect the dialect, auto detects an implementation by default using JDK [ServiceLoader] facility.
- * @param logger logger used to output logs, auto detects an implementation by default.
+ * @param dialect the dialect, auto-detects an implementation by default using JDK [ServiceLoader] facility.
+ * @param logger logger used to output logs, auto-detects an implementation by default.
  * @param alwaysQuoteIdentifiers whether we need to always quote SQL identifiers in the generated SQLs.
  * @param generateSqlInUpperCase whether we need to output the generated SQLs in upper case.
  * @return the new-created database object.
  */
+@Deprecated("ktorm-global will be removed in the future, please migrate to the standard API.")
 public fun Database.Companion.connectGlobally(
     url: String,
     driver: String? = null,
@@ -136,7 +142,7 @@ public fun Database.Companion.connectGlobally(
     alwaysQuoteIdentifiers: Boolean = false,
     generateSqlInUpperCase: Boolean? = null
 ): Database {
-    if (driver != null && driver.isNotBlank()) {
+    if (!driver.isNullOrBlank()) {
         Class.forName(driver)
     }
 
@@ -164,12 +170,13 @@ public fun Database.Companion.connectGlobally(
  * to Spring's [DataAccessException] and rethrow it.
  *
  * @param dataSource the data source used to obtain SQL connections.
- * @param dialect the dialect, auto detects an implementation by default using JDK [ServiceLoader] facility.
- * @param logger logger used to output logs, auto detects an implementation by default.
+ * @param dialect the dialect, auto-detects an implementation by default using JDK [ServiceLoader] facility.
+ * @param logger logger used to output logs, auto-detects an implementation by default.
  * @param alwaysQuoteIdentifiers whether we need to always quote SQL identifiers in the generated SQLs.
  * @param generateSqlInUpperCase whether we need to output the generated SQLs in upper case.
  * @return the new-created database object.
  */
+@Deprecated("ktorm-global will be removed in the future, please migrate to the standard API.")
 public fun Database.Companion.connectWithSpringSupportGlobally(
     dataSource: DataSource,
     dialect: SqlDialect = detectDialectImplementation(),
@@ -202,6 +209,7 @@ public fun Database.Companion.connectWithSpringSupportGlobally(
  *
  * @see Database.Companion.global
  */
+@Deprecated("ktorm-global will be removed in the future, please migrate to the standard API.")
 public inline operator fun <T> Database.invoke(func: Database.() -> T): T {
     // Contracts are not allowed for operator functions?
     // contract {
@@ -230,6 +238,7 @@ public inline operator fun <T> Database.invoke(func: Database.() -> T): T {
  * @see Database.useConnection
  */
 @OptIn(ExperimentalContracts::class)
+@Deprecated("ktorm-global will be removed in the future, please migrate to the standard API.")
 public inline fun <T> useConnection(func: (Connection) -> T): T {
     contract {
         callsInPlace(func, InvocationKind.EXACTLY_ONCE)
@@ -256,6 +265,7 @@ public inline fun <T> useConnection(func: (Connection) -> T): T {
  * @see Database.useTransaction
  */
 @OptIn(ExperimentalContracts::class)
+@Deprecated("ktorm-global will be removed in the future, please migrate to the standard API.")
 public inline fun <T> useTransaction(isolation: TransactionIsolation? = null, func: (Transaction) -> T): T {
     contract {
         callsInPlace(func, InvocationKind.EXACTLY_ONCE)

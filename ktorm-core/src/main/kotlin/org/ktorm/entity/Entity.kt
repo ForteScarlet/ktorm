@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2021 the original author or authors.
+ * Copyright 2018-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,12 @@
 package org.ktorm.entity
 
 import org.ktorm.database.Database
-import org.ktorm.schema.TypeReference
 import org.ktorm.schema.Table
+import org.ktorm.schema.TypeReference
 import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
 import java.io.Serializable
 import java.lang.reflect.Proxy
-import java.sql.SQLException
 import kotlin.reflect.KClass
 import kotlin.reflect.full.isSubclassOf
 import kotlin.reflect.jvm.jvmErasure
@@ -61,8 +60,8 @@ import kotlin.reflect.jvm.jvmErasure
  * value table. However, what if the value doesn't exist while we are getting a property? Ktorm defines a set of
  * rules for this situation:
  *
- * - If the value doesn’t exist and the property’s type is nullable (eg. `var name: String?`), then we’ll return null.
- * - If the value doesn’t exist and the property’s type is not nullable (eg. `var name: String`), then we can not
+ * - If the value doesn't exist and the property’s type is nullable (e.g. `var name: String?`), then we’ll return null.
+ * - If the value doesn't exist and the property’s type is not nullable (e.g. `var name: String`), then we can not
  * return null anymore, because the null value here can cause an unexpected null pointer exception, we’ll return the
  * type’s default value instead.
  *
@@ -78,7 +77,7 @@ import kotlin.reflect.jvm.jvmErasure
  * - For collection types (such as [Set], [List], [Map], etc), the default value is a new created mutable collection
  * of the concrete type.
  * - For any other types, the default value is an instance created by its no-args constructor. If the constructor
- * doesn’t exist, an exception is thrown.
+ * doesn't exist, an exception is thrown.
  *
  * Moreover, there is a cache mechanism for default values, that ensures a property always returns the same default
  * value instance even if it’s called twice or more. This can avoid some counterintuitive bugs.
@@ -150,7 +149,7 @@ public interface Entity<E : Entity<E>> : Serializable {
      * Using this function, we need to note that:
      *
      * 1. This function requires a primary key specified in the table object via [Table.primaryKey],
-     * otherwise Ktorm doesn’t know how to identify entity objects and will throw an exception.
+     * otherwise Ktorm doesn't know how to identify entity objects and will throw an exception.
      *
      * 2. The entity object calling this function must be ATTACHED to the database first. In Ktorm’s implementation,
      * every entity object holds a reference `fromDatabase`. For entity objects obtained by sequence APIs, their
@@ -162,7 +161,6 @@ public interface Entity<E : Entity<E>> : Serializable {
      * @see add
      * @see update
      */
-    @Throws(SQLException::class)
     public fun flushChanges(): Int
 
     /**
@@ -179,7 +177,7 @@ public interface Entity<E : Entity<E>> : Serializable {
      * Similar to [flushChanges], we need to note that:
      *
      * 1. The function requires a primary key specified in the table object via [Table.primaryKey],
-     * otherwise, Ktorm doesn’t know how to identify entity objects.
+     * otherwise, Ktorm doesn't know how to identify entity objects.
      *
      * 2. The entity object calling this function must be ATTACHED to the database first.
      *
@@ -187,13 +185,12 @@ public interface Entity<E : Entity<E>> : Serializable {
      * @see update
      * @see flushChanges
      */
-    @Throws(SQLException::class)
     public fun delete(): Int
 
     /**
      * Obtain a property's value by its name.
      *
-     * Note that this function doesn't follows the rules of default values discussed in the class level documentation.
+     * Note that this function doesn't follow the rules of default values discussed in the class level documentation.
      * If the value doesn't exist, we will return `null` simply.
      */
     public operator fun get(name: String): Any?
@@ -235,7 +232,7 @@ public interface Entity<E : Entity<E>> : Serializable {
     public companion object {
 
         /**
-         * Create an entity object. This functions is used by Ktorm internal.
+         * Create an entity object. This function is used by Ktorm internal.
          */
         internal fun create(
             entityClass: KClass<*>,

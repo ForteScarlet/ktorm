@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2021 the original author or authors.
+ * Copyright 2018-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,13 @@
 
 package org.ktorm.dsl
 
+import org.ktorm.database.CachedRowSet
 import org.ktorm.database.Database
 import org.ktorm.expression.*
 import org.ktorm.schema.BaseTable
 import org.ktorm.schema.Column
 import org.ktorm.schema.ColumnDeclaring
-import org.ktorm.schema.defaultValue
-import java.lang.reflect.InvocationHandler
-import java.lang.reflect.Proxy
-import java.sql.PreparedStatement
 import java.sql.Statement
-import kotlin.collections.ArrayList
 
 /**
  * Construct an update expression in the given closure, then execute it and return the effected row count.
@@ -51,8 +47,11 @@ import kotlin.collections.ArrayList
  */
 public fun <T : BaseTable<*>> Database.update(table: T, block: UpdateStatementBuilder.(T) -> Unit): Int {
     val builder = UpdateStatementBuilder().apply { block(table) }
+    if (builder.assignments.isEmpty()) {
+        throw IllegalArgumentException("There are no columns to update in the statement.")
+    }
 
-    val expression = AliasRemover.visit(
+    val expression = dialect.createExpressionVisitor(AliasRemover).visit(
         UpdateExpression(table.asExpression(), builder.assignments, builder.where?.asExpression())
     )
 
@@ -91,7 +90,16 @@ public fun <T : BaseTable<*>> Database.batchUpdate(
     block: BatchUpdateStatementBuilder<T>.() -> Unit
 ): IntArray {
     val builder = BatchUpdateStatementBuilder(table).apply(block)
-    val expressions = builder.expressions.map { AliasRemover.visit(it) }
+    if (builder.expressions.isEmpty()) {
+        throw IllegalArgumentException("There are no items in the batch operation.")
+    }
+    for (expr in builder.expressions) {
+        if (expr.assignments.isEmpty()) {
+            throw IllegalArgumentException("There are no columns to update in the statement.")
+        }
+    }
+
+    val expressions = builder.expressions.map { dialect.createExpressionVisitor(AliasRemover).visit(it) }
 
     if (expressions.isEmpty()) {
         return IntArray(0)
@@ -123,7 +131,14 @@ public fun <T : BaseTable<*>> Database.batchUpdate(
  */
 public fun <T : BaseTable<*>> Database.insert(table: T, block: AssignmentsBuilder.(T) -> Unit): Int {
     val builder = AssignmentsBuilder().apply { block(table) }
-    val expression = AliasRemover.visit(InsertExpression(table.asExpression(), builder.assignments))
+    if (builder.assignments.isEmpty()) {
+        throw IllegalArgumentException("There are no columns to insert in the statement.")
+    }
+
+    val expression = dialect.createExpressionVisitor(AliasRemover).visit(
+        InsertExpression(table.asExpression(), builder.assignments)
+    )
+
     return executeUpdate(expression)
 }
 
@@ -153,12 +168,19 @@ public fun <T : BaseTable<*>> Database.insert(table: T, block: AssignmentsBuilde
  */
 public fun <T : BaseTable<*>> Database.insertAndGenerateKey(table: T, block: AssignmentsBuilder.(T) -> Unit): Any {
     val builder = AssignmentsBuilder().apply { block(table) }
-    val expression = AliasRemover.visit(InsertExpression(table.asExpression(), builder.assignments))
+    if (builder.assignments.isEmpty()) {
+        throw IllegalArgumentException("There are no columns to insert in the statement.")
+    }
+
+    val expression = dialect.createExpressionVisitor(AliasRemover).visit(
+        InsertExpression(table.asExpression(), builder.assignments)
+    )
+
     val (_, rowSet) = executeUpdateAndRetrieveKeys(expression)
 
     if (rowSet.next()) {
         val pk = table.singlePrimaryKey { "Key retrieval is not supported for compound primary keys." }
-        val generatedKey = pk.sqlType.getResult(rowSet, 1) ?: error("Generated key is null.")
+        val generatedKey = rowSet.getGeneratedKey(pk) ?: error("Generated key is null.")
 
         if (logger.isDebugEnabled()) {
             logger.debug("Generated Key: $generatedKey")
@@ -168,6 +190,23 @@ public fun <T : BaseTable<*>> Database.insertAndGenerateKey(table: T, block: Ass
     } else {
         error("No generated key returns by database.")
     }
+}
+
+/**
+ * Get generated key from the row set.
+ */
+internal fun <T : Any> CachedRowSet.getGeneratedKey(primaryKey: Column<T>): T? {
+    if (metaData.columnCount == 1) {
+        return primaryKey.sqlType.getResult(this, 1)
+    }
+
+    for (index in 1..metaData.columnCount) {
+        if (metaData.getColumnName(index).equals(primaryKey.name, ignoreCase = true)) {
+            return primaryKey.sqlType.getResult(this, index)
+        }
+    }
+
+    throw IllegalStateException("Cannot find column `${primaryKey.name}` in the returned row set.")
 }
 
 /**
@@ -210,7 +249,16 @@ public fun <T : BaseTable<*>> Database.batchInsert(
     block: BatchInsertStatementBuilder<T>.() -> Unit
 ): IntArray {
     val builder = BatchInsertStatementBuilder(table).apply(block)
-    val expressions = builder.expressions.map { AliasRemover.visit(it) }
+    if (builder.expressions.isEmpty()) {
+        throw IllegalArgumentException("There are no items in the batch operation.")
+    }
+    for (expr in builder.expressions) {
+        if (expr.assignments.isEmpty()) {
+            throw IllegalArgumentException("There are no columns to insert in the statement.")
+        }
+    }
+
+    val expressions = builder.expressions.map { dialect.createExpressionVisitor(AliasRemover).visit(it) }
 
     if (expressions.isEmpty()) {
         return IntArray(0)
@@ -223,6 +271,10 @@ public fun <T : BaseTable<*>> Database.batchInsert(
  * Insert the current [Query]'s results into the given table, useful when transfer data from a table to another table.
  */
 public fun Query.insertTo(table: BaseTable<*>, vararg columns: Column<*>): Int {
+    if (columns.isEmpty()) {
+        throw IllegalArgumentException("There are no columns to insert in the statement.")
+    }
+
     val expression = InsertFromQueryExpression(
         table = table.asExpression(),
         columns = columns.map { it.asExpression() },
@@ -238,7 +290,10 @@ public fun Query.insertTo(table: BaseTable<*>, vararg columns: Column<*>): Int {
  * @since 2.7
  */
 public fun <T : BaseTable<*>> Database.delete(table: T, predicate: (T) -> ColumnDeclaring<Boolean>): Int {
-    val expression = AliasRemover.visit(DeleteExpression(table.asExpression(), predicate(table).asExpression()))
+    val expression = dialect.createExpressionVisitor(AliasRemover).visit(
+        DeleteExpression(table.asExpression(), predicate(table).asExpression())
+    )
+
     return executeUpdate(expression)
 }
 
@@ -248,7 +303,10 @@ public fun <T : BaseTable<*>> Database.delete(table: T, predicate: (T) -> Column
  * @since 2.7
  */
 public fun Database.deleteAll(table: BaseTable<*>): Int {
-    val expression = AliasRemover.visit(DeleteExpression(table.asExpression(), where = null))
+    val expression = dialect.createExpressionVisitor(AliasRemover).visit(
+        DeleteExpression(table.asExpression(), where = null)
+    )
+
     return executeUpdate(expression)
 }
 
@@ -288,82 +346,6 @@ public open class AssignmentsBuilder {
     public fun <C : Any> set(column: Column<C>, value: C?) {
         _assignments += ColumnAssignmentExpression(column.asExpression(), column.wrapArgument(value))
     }
-
-    /**
-     * Assign the specific column to a value.
-     *
-     * @since 3.1.0
-     */
-    @JvmName("setAny")
-    @Suppress("UNCHECKED_CAST")
-    @Deprecated("This function will be removed in the future. Please use the generic version instead.")
-    public fun set(column: Column<*>, value: Any?) {
-        (column as Column<Any>).checkAssignableFrom(value)
-        _assignments += ColumnAssignmentExpression(column.asExpression(), column.wrapArgument(value))
-    }
-
-    /**
-     * Assign the current column to another column or an expression's result.
-     */
-    @Deprecated(
-        message = "This function will be removed in the future. Please use set(column, expr) instead.",
-        replaceWith = ReplaceWith("set(this, expr)")
-    )
-    public infix fun <C : Any> Column<C>.to(expr: ColumnDeclaring<C>) {
-        _assignments += ColumnAssignmentExpression(asExpression(), expr.asExpression())
-    }
-
-    /**
-     * Assign the current column to a specific value.
-     */
-    @Deprecated(
-        message = "This function will be removed in the future. Please use set(column, value) instead.",
-        replaceWith = ReplaceWith("set(this, value)")
-    )
-    public infix fun <C : Any> Column<C>.to(value: C?) {
-        _assignments += ColumnAssignmentExpression(asExpression(), wrapArgument(value))
-    }
-
-    /**
-     * Assign the current column to a specific value.
-     *
-     * Note that this function accepts an argument type `Any?`, that's because it is designed to avoid
-     * applications call [kotlin.to] unexpectedly in the DSL closures. An exception will be thrown
-     * by this function if the argument type doesn't match the column's type.
-     */
-    @JvmName("toAny")
-    @Suppress("UNCHECKED_CAST")
-    @Deprecated(
-        message = "This function will be removed in the future. Please use set(column, value) instead.",
-        replaceWith = ReplaceWith("set(this, value)")
-    )
-    public infix fun Column<*>.to(value: Any?) {
-        this as Column<Any>
-        checkAssignableFrom(value)
-        _assignments += ColumnAssignmentExpression(asExpression(), wrapArgument(value))
-    }
-
-    private fun Column<Any>.checkAssignableFrom(value: Any?) {
-        if (value == null) return
-
-        val handler = InvocationHandler { _, method, _ ->
-            // Do nothing...
-            @Suppress("ForbiddenVoid")
-            if (method.returnType == Void.TYPE || !method.returnType.isPrimitive) {
-                null
-            } else {
-                method.returnType.defaultValue
-            }
-        }
-
-        val proxy = Proxy.newProxyInstance(javaClass.classLoader, arrayOf(PreparedStatement::class.java), handler)
-
-        try {
-            sqlType.setParameter(proxy as PreparedStatement, 1, value)
-        } catch (e: ClassCastException) {
-            throw IllegalArgumentException("Argument type doesn't match the column's type, column: $this", e)
-        }
-    }
 }
 
 /**
@@ -386,7 +368,7 @@ public class UpdateStatementBuilder : AssignmentsBuilder() {
  */
 @KtormDsl
 public class BatchUpdateStatementBuilder<T : BaseTable<*>>(internal val table: T) {
-    internal val expressions = ArrayList<SqlExpression>()
+    internal val expressions = ArrayList<UpdateExpression>()
 
     /**
      * Add an update statement to the current batch operation.
@@ -404,7 +386,7 @@ public class BatchUpdateStatementBuilder<T : BaseTable<*>>(internal val table: T
  */
 @KtormDsl
 public class BatchInsertStatementBuilder<T : BaseTable<*>>(internal val table: T) {
-    internal val expressions = ArrayList<SqlExpression>()
+    internal val expressions = ArrayList<InsertExpression>()
 
     /**
      * Add an insert statement to the current batch operation.
@@ -418,23 +400,19 @@ public class BatchInsertStatementBuilder<T : BaseTable<*>>(internal val table: T
 }
 
 /**
- * [SqlExpressionVisitor] implementation used to removed table aliases, used by Ktorm internal.
+ * Expression visitor interceptor for removing table aliases, used by Ktorm internally.
  */
-internal object AliasRemover : SqlExpressionVisitor() {
+public object AliasRemover : SqlExpressionVisitorInterceptor {
 
-    override fun visitTable(expr: TableExpression): TableExpression {
-        if (expr.tableAlias == null) {
-            return expr
-        } else {
-            return expr.copy(tableAlias = null)
+    override fun intercept(expr: SqlExpression, visitor: SqlExpressionVisitor): SqlExpression? {
+        if (expr is TableExpression) {
+            if (expr.tableAlias == null) {
+                return expr
+            } else {
+                return expr.copy(tableAlias = null)
+            }
         }
-    }
 
-    override fun <T : Any> visitColumn(expr: ColumnExpression<T>): ColumnExpression<T> {
-        if (expr.table == null) {
-            return expr
-        } else {
-            return expr.copy(table = null)
-        }
+        return null
     }
 }
